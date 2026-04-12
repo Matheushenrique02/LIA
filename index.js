@@ -21,7 +21,10 @@ client.on('clientReady', () => {
 })
 
 client.on('messageCreate', async (message) => {
-  if(message.author.bot) return
+  if (message.author.bot) return
+
+  // Só responde quando mencionar a Lia
+  if (!message.mentions.has(client.user)) return
 
   try {
 
@@ -30,7 +33,7 @@ client.on('messageCreate', async (message) => {
       messages: [
         {
           role: "system",
-          content: "Você é a Lia, uma assistente amigável de Discord que ajuda os usuários."
+          content: "Você é a Lia, uma assistente amigável do Discord. Você ajuda usuários com dúvidas, conversa naturalmente e é simpática."
         },
         {
           role: "user",
