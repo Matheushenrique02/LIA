@@ -18,7 +18,7 @@ client.on('messageCreate', message => {
   if(message.author.bot) return
 
   if(message.content.toLowerCase().includes('lia')){
-    message.reply('Oi! Sou a Lia , Suporte N2')
+    message.reply('Oi Sou a Lia , Suporte N2')
   }
 })
 
