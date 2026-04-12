@@ -23,21 +23,29 @@ client.on('ready', () => {
 client.on('messageCreate', async (message) => {
   if(message.author.bot) return
 
- const response = await openai.chat.completions.create({
-  model: "gpt-4o-mini",
-  messages: [
-    {
-      role: "system",
-      content: "Você é a Lia, uma assistente amigável de Discord que ajuda os usuários."
-    },
-    {
-      role: "user",
-      content: message.content
-    }
-  ]
-});
+  try {
 
-message.reply(response.choices[0].message.content);
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "Você é a Lia, uma assistente amigável de Discord que ajuda os usuários."
+        },
+        {
+          role: "user",
+          content: message.content
+        }
+      ]
+    });
+
+    message.reply(response.choices[0].message.content);
+
+  } catch (error) {
+    console.error(error)
+    message.reply("Ocorreu um erro ao falar com a IA 😢")
+  }
+
 })
 
 client.login(process.env.DISCORD_TOKEN)
