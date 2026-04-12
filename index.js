@@ -16,7 +16,7 @@ const client = new Client({
   ]
 })
 
-client.on('ready', () => {
+client.on('clientReady', () => {
   console.log('Lia está online!')
 })
 
