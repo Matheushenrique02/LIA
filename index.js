@@ -12,8 +12,10 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
+  ],
+  partials: ['CHANNEL']
 })
 
 client.on('clientReady', () => {
@@ -23,30 +25,78 @@ client.on('clientReady', () => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return
 
-  // Só responde quando mencionar a Lia
-  if (!message.mentions.has(client.user)) return
+  // Comando suporte no servidor
+  if (message.content === "!suporte") {
 
-  try {
+    try {
+      await message.reply("Te chamei no privado 📩")
+      await message.author.send("Olá! Sou a Lia 🤖 Como posso te ajudar?")
+    } catch (error) {
+      message.reply("Não consegui te enviar mensagem privada. Ative seu DM 😢")
+    }
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: "Você é a Lia, uma assistente amigável do Discord. Você ajuda usuários com dúvidas, conversa naturalmente e é simpática."
-        },
-        {
-          role: "user",
-          content: message.content
-        }
-      ]
-    });
+    return
+  }
 
-    message.reply(response.choices[0].message.content);
+  // Se for mensagem privada
+  if (!message.guild) {
 
-  } catch (error) {
-    console.error(error)
-    message.reply("Ocorreu um erro ao falar com a IA 😢")
+    try {
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `
+Você é a Lia, uma assistente de suporte profissional no Discord.
+Você ajuda usuários com dúvidas, suporte técnico e atendimento.
+Seja educada, clara e objetiva.
+            `
+          },
+          {
+            role: "user",
+            content: message.content
+          }
+        ]
+      });
+
+      await message.reply(response.choices[0].message.content);
+
+    } catch (error) {
+      console.error(error)
+      message.reply("Ocorreu um erro ao falar com a IA 😢")
+    }
+
+    return
+  }
+
+  // Responder quando mencionar no servidor
+  if (message.mentions.has(client.user)) {
+
+    try {
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "Você é a Lia, assistente amigável do Discord."
+          },
+          {
+            role: "user",
+            content: message.content
+          }
+        ]
+      });
+
+      await message.reply(response.choices[0].message.content);
+
+    } catch (error) {
+      console.error(error)
+      message.reply("Erro ao responder 😢")
+    }
+
   }
 
 })
