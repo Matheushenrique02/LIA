@@ -29,8 +29,7 @@ client.on('messageCreate', async (message) => {
   if (message.content === "!suporte") {
 
     try {
-      await message.reply("Te chamei no privado 📩")
-      await message.author.send("Olá! Sou a Lia 🤖 Como posso te ajudar?")
+      await message.author.send("Olá! Sou a Lia,Como posso te ajudar?")
     } catch (error) {
       message.reply("Não consegui te enviar mensagem privada. Ative seu DM 😢")
     }
