@@ -25,7 +25,7 @@ client.on('clientReady', () => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return
 
-  // Comando suporte no servidor
+  
   if (message.content === "!suporte") {
 
     try {
@@ -37,7 +37,7 @@ client.on('messageCreate', async (message) => {
     return
   }
 
-  // Se for mensagem privada
+  
   if (!message.guild) {
 
     try {
@@ -70,7 +70,7 @@ Seja educada, clara e objetiva.
     return
   }
 
-  // Responder quando mencionar no servidor
+  
   if (message.mentions.has(client.user)) {
 
     try {
