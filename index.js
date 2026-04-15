@@ -1,5 +1,7 @@
 require('dotenv').config()
 
+const tickets = require('./arquivos/tickets_lia.json')
+
 const PromptPadrao = `
 Você é a Lia, assistente técnica especialista no ERP LINVIX.
 
@@ -40,7 +42,7 @@ Evite:
 - Linguagem leiga
 - Explicações óbvias
 - Respostas vagas ou superficiais
-`;
+`
 
 const OpenAI = require("openai");
 
@@ -60,19 +62,33 @@ const client = new Client({
   partials: ['CHANNEL']
 })
 
+
+// Função utilizada para buscar ticket
+function buscarTicket(pergunta) {
+  const perguntaLower = pergunta.toLowerCase()
+
+  return tickets.find(ticket =>
+    ticket.descricao?.toLowerCase().includes(perguntaLower) ||
+    ticket.detalhamento?.toLowerCase().includes(perguntaLower)
+  )
+}
+
+
 client.on('clientReady', () => {
   console.log('Lia está online!')
 })
 
+
 client.on('messageCreate', async (message) => {
+
   if (message.author.bot) return
 
-  // Comando suporte pra chamar no servidor
+  // Comando pra acionar suporte
   if (message.content === "!suporte") {
 
     try {
       await message.react('✅')
-      await message.author.send("Olá! Sou a Lia,Como posso te ajudar?")
+      await message.author.send("Olá! Sou a Lia 🤖 Como posso te ajudar?")
     } catch (error) {
       message.reply("Não consegui te enviar mensagem privada. Ative seu DM 😢")
     }
@@ -80,11 +96,24 @@ client.on('messageCreate', async (message) => {
     return
   }
 
-  // Caso seja mensagem privada
+  // Mensagem privada
   if (!message.guild) {
 
     try {
+
       await message.react('⏳')
+
+      const ticketEncontrado = buscarTicket(message.content)
+
+      const contextoTicket = ticketEncontrado
+        ? `
+Ticket semelhante encontrado:
+Descrição: ${ticketEncontrado.descricao}
+Detalhamento: ${ticketEncontrado.detalhamento}
+Resolução: ${ticketEncontrado.resolucao}
+`
+        : "Nenhum ticket semelhante encontrado."
+
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -93,11 +122,16 @@ client.on('messageCreate', async (message) => {
             content: PromptPadrao
           },
           {
+            role: "system",
+            content: contextoTicket
+          },
+          {
             role: "user",
             content: message.content
           }
         ]
       });
+
       await message.react('✅')
       await message.reply(response.choices[0].message.content);
 
@@ -110,7 +144,8 @@ client.on('messageCreate', async (message) => {
     return
   }
 
-  // Resposta quando alguém mencionar no servidor
+
+  // Responder quando mencionar no servidor
   if (message.mentions.has(client.user)) {
 
     try {
@@ -120,7 +155,7 @@ client.on('messageCreate', async (message) => {
         messages: [
           {
             role: "system",
-            content: "Você é a Lia, assistente amigável do Discord."
+            content: "Você é a Lia, assistente técnica do ERP LINVIX."
           },
           {
             role: "user",
