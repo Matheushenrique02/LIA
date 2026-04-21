@@ -5,14 +5,12 @@ const { PromptPadrao } = require('./constants');
 const { logError, logIA } = require('./logger');
 const tickets = require('./tickets_lia.json');
 
-
 // OpenAI
 const OpenAI = require("openai");
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_KEY
 });
-
 
 const { Client, GatewayIntentBits } = require('discord.js')
 
@@ -27,16 +25,98 @@ const client = new Client({
 })
 
 
+// ================================
+// FILTRO INTELIGENTE DE TICKETS
+// ================================
+
+function ticketValido(ticket) {
+
+  if (!ticket.descricao || ticket.descricao.length < 15)
+    return false
+
+  if (!ticket.detalhamento || ticket.detalhamento.length < 15)
+    return false
+
+  if (!ticket.resolucao || ticket.resolucao.length < 15)
+    return false
+
+  return true
+}
+
+function filtrarTickets(tickets) {
+  return tickets.filter(ticketValido)
+}
+
+
+// ================================
+// BUSCAR TICKETS RELEVANTES
+// ================================
+
+function buscarTickets(pergunta, tickets) {
+
+  const perguntaLower = pergunta.toLowerCase()
+
+  const resultados = tickets.map(ticket => {
+
+    const texto = (
+      ticket.descricao +
+      ticket.detalhamento +
+      ticket.resolucao
+    ).toLowerCase()
+
+    let score = 0
+
+    if (texto.includes(perguntaLower)) score += 3
+
+    perguntaLower.split(" ").forEach(palavra => {
+      if (texto.includes(palavra)) score += 1
+    })
+
+    return {
+      ticket,
+      score
+    }
+
+  })
+
+  return resultados
+    .filter(r => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map(r => r.ticket)
+}
+
+
+// ================================
+// FILTRAR AO INICIAR
+// ================================
+
+const ticketsFiltrados = filtrarTickets(tickets)
+
+console.log("Tickets originais:", tickets.length)
+console.log("Tickets filtrados:", ticketsFiltrados.length)
+
+
+// ================================
+// BOT ONLINE
+// ================================
+
 client.on('clientReady', () => {
   console.log('Lia está online!')
 })
 
 
+// ================================
+// MENSAGENS
+// ================================
+
 client.on('messageCreate', async (message) => {
 
   if (message.author.bot) return
 
-// Comando suporte
+// ================================
+// COMANDO SUPORTE
+// ================================
 
   if (message.content === "!suporte") {
 
@@ -59,11 +139,31 @@ client.on('messageCreate', async (message) => {
     return
   }
 
-// Mensagem privada
+
+// ================================
+// MENSAGEM PRIVADA
+// ================================
 
   if (!message.guild) {
 
     try {
+
+      // Buscar tickets relevantes
+
+      const ticketsRelevantes = buscarTickets(
+        message.content,
+        ticketsFiltrados
+      )
+
+      const contextoTickets = ticketsRelevantes
+        .map(t => `
+Ticket Resolvido:
+
+Título: ${t.descricao}
+Problema: ${t.detalhamento}
+Solução: ${t.resolucao}
+`)
+        .join("\n")
 
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -75,12 +175,12 @@ client.on('messageCreate', async (message) => {
           {
             role: "system",
             content: `
-Base de conhecimento interna (tickets resolvidos):
+Base de conhecimento interna:
 
-${JSON.stringify(tickets).slice(0, 12000)}
+${contextoTickets}
 
-Use essa base para responder quando possível.
-Se encontrar algo parecido, utilize a solução existente.
+Use esses tickets como prioridade.
+Se não encontrar resposta, utilize seu conhecimento geral.
 `
           },
           {
@@ -92,7 +192,10 @@ Se encontrar algo parecido, utilize a solução existente.
 
       const resposta = response.choices[0].message.content.trim()
 
-// Fora do escopo
+
+// ================================
+// FORA DO ESCOPO
+// ================================
 
       if (resposta === "FORA_DO_ESCOPO") {
 
@@ -107,7 +210,10 @@ Se encontrar algo parecido, utilize a solução existente.
         )
       }
 
-// Não sabe responder
+
+// ================================
+// NAO SABE RESPONDER
+// ================================
 
       if (resposta === "NAO_SEI_RESPONDER") {
 
@@ -122,7 +228,10 @@ Se encontrar algo parecido, utilize a solução existente.
         )
       }
 
-// Resposta normal
+
+// ================================
+// RESPOSTA NORMAL
+// ================================
 
       await logIA(
         "Resposta Normal",
@@ -146,11 +255,29 @@ Se encontrar algo parecido, utilize a solução existente.
     return
   }
 
-// Quando mencionar no servidor
+
+// ================================
+// QUANDO MENCIONAR NO SERVIDOR
+// ================================
 
   if (message.mentions.has(client.user)) {
 
     try {
+
+      const ticketsRelevantes = buscarTickets(
+        message.content,
+        ticketsFiltrados
+      )
+
+      const contextoTickets = ticketsRelevantes
+        .map(t => `
+Ticket Resolvido:
+
+Título: ${t.descricao}
+Problema: ${t.detalhamento}
+Solução: ${t.resolucao}
+`)
+        .join("\n")
 
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -164,7 +291,10 @@ Se encontrar algo parecido, utilize a solução existente.
             content: `
 Base de conhecimento interna:
 
-${JSON.stringify(tickets).slice(0, 12000)}
+${contextoTickets}
+
+Use esses tickets como prioridade.
+Se não encontrar resposta, utilize conhecimento geral.
 `
           },
           {
@@ -190,6 +320,5 @@ ${JSON.stringify(tickets).slice(0, 12000)}
   }
 
 })
-
 
 client.login(process.env.DISCORD_TOKEN)
