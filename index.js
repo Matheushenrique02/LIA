@@ -12,7 +12,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_KEY
 });
 
-const { Client, GatewayIntentBits } = require('discord.js')
+const { Client, GatewayIntentBits, Partials } = require('discord.js')
 
 const client = new Client({
   intents: [
@@ -21,40 +21,24 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages
   ],
-  partials: ['CHANNEL']
+  partials: [
+    Partials.Channel,
+    Partials.Message,
+    Partials.User
+  ]
 })
 
 
 // ================================
-// FILTRO INTELIGENTE DE TICKETS
-// ================================
-
-function ticketValido(ticket) {
-
-  if (!ticket.descricao || ticket.descricao.length < 15)
-    return false
-
-  if (!ticket.detalhamento || ticket.detalhamento.length < 15)
-    return false
-
-  if (!ticket.resolucao || ticket.resolucao.length < 15)
-    return false
-
-  return true
-}
-
-function filtrarTickets(tickets) {
-  return tickets.filter(ticketValido)
-}
-
-
-// ================================
-// BUSCAR TICKETS RELEVANTES
+// BUSCA INTELIGENTE DE TICKETS
 // ================================
 
 function buscarTickets(pergunta, tickets) {
 
-  const perguntaLower = pergunta.toLowerCase()
+  const palavras = pergunta
+    .toLowerCase()
+    .split(" ")
+    .filter(p => p.length > 2)
 
   const resultados = tickets.map(ticket => {
 
@@ -66,10 +50,31 @@ function buscarTickets(pergunta, tickets) {
 
     let score = 0
 
-    if (texto.includes(perguntaLower)) score += 3
+    // Score por palavras da pergunta
+    palavras.forEach(palavra => {
+      if (texto.includes(palavra)) score += 2
+    })
 
-    perguntaLower.split(" ").forEach(palavra => {
-      if (texto.includes(palavra)) score += 1
+    // Priorizar termos técnicos
+    if (texto.includes("erro")) score += 1
+    if (texto.includes("serviço")) score += 1
+    if (texto.includes("network")) score += 1
+    if (texto.includes("pdv")) score += 1
+    if (texto.includes("sistema")) score += 1
+
+    // Penalizar tickets genéricos
+    const genericos = [
+      "ajustado",
+      "auxiliado",
+      "auxiliei",
+      "cliente orientado",
+      "suporte realizado",
+      "verificado",
+      "confirmado"
+    ]
+
+    genericos.forEach(p => {
+      if (texto.includes(p)) score -= 1
     })
 
     return {
@@ -85,16 +90,6 @@ function buscarTickets(pergunta, tickets) {
     .slice(0, 5)
     .map(r => r.ticket)
 }
-
-
-// ================================
-// FILTRAR AO INICIAR
-// ================================
-
-const ticketsFiltrados = filtrarTickets(tickets)
-
-console.log("Tickets originais:", tickets.length)
-console.log("Tickets filtrados:", ticketsFiltrados.length)
 
 
 // ================================
@@ -141,18 +136,16 @@ client.on('messageCreate', async (message) => {
 
 
 // ================================
-// MENSAGEM PRIVADA
+// MENSAGEM PRIVADA (CORRIGIDO)
 // ================================
 
   if (!message.guild) {
 
     try {
 
-      // Buscar tickets relevantes
-
       const ticketsRelevantes = buscarTickets(
         message.content,
-        ticketsFiltrados
+        tickets
       )
 
       const contextoTickets = ticketsRelevantes
@@ -164,6 +157,8 @@ Problema: ${t.detalhamento}
 Solução: ${t.resolucao}
 `)
         .join("\n")
+
+      console.log("Tickets encontrados:", ticketsRelevantes.length)
 
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -180,7 +175,7 @@ Base de conhecimento interna:
 ${contextoTickets}
 
 Use esses tickets como prioridade.
-Se não encontrar resposta, utilize seu conhecimento geral.
+Se não encontrar resposta, utilize conhecimento geral.
 `
           },
           {
@@ -266,7 +261,7 @@ Se não encontrar resposta, utilize seu conhecimento geral.
 
       const ticketsRelevantes = buscarTickets(
         message.content,
-        ticketsFiltrados
+        tickets
       )
 
       const contextoTickets = ticketsRelevantes
