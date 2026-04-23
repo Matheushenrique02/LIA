@@ -1,18 +1,25 @@
 require('dotenv').config()
 
-// Constantes
+// ================================
+// IMPORTS
+// ================================
+
 const { PromptPadrao } = require('./constants');
 const { logError, logIA } = require('./logger');
 const tickets = require('./tickets_lia.json');
 
-// OpenAI
 const OpenAI = require("openai");
+
+const { Client, GatewayIntentBits, Partials } = require('discord.js')
+
+
+// ================================
+// CONFIG
+// ================================
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_KEY
 });
-
-const { Client, GatewayIntentBits, Partials } = require('discord.js')
 
 const client = new Client({
   intents: [
@@ -35,60 +42,138 @@ const client = new Client({
 
 function buscarTickets(pergunta, tickets) {
 
-  const palavras = pergunta
-    .toLowerCase()
-    .split(" ")
+  const perguntaLower = pergunta.toLowerCase()
+
+  const palavras = perguntaLower
+    .split(/\W+/)
     .filter(p => p.length > 2)
 
   const resultados = tickets.map(ticket => {
 
     const texto = (
       ticket.descricao +
+      " " +
       ticket.detalhamento +
+      " " +
       ticket.resolucao
     ).toLowerCase()
 
     let score = 0
 
-    // Score por palavras da pergunta
-    palavras.forEach(palavra => {
-      if (texto.includes(palavra)) score += 2
+    // match exato (muito forte)
+    if (texto.includes(perguntaLower)) score += 10
+
+    // match por palavras
+    palavras.forEach(p => {
+      if (texto.includes(p)) score += 2
     })
 
-    // Priorizar termos técnicos
-    if (texto.includes("erro")) score += 1
-    if (texto.includes("serviço")) score += 1
-    if (texto.includes("network")) score += 1
-    if (texto.includes("pdv")) score += 1
-    if (texto.includes("sistema")) score += 1
-
-    // Penalizar tickets genéricos
-    const genericos = [
-      "ajustado",
-      "auxiliado",
-      "auxiliei",
-      "cliente orientado",
-      "suporte realizado",
-      "verificado",
-      "confirmado"
-    ]
-
-    genericos.forEach(p => {
-      if (texto.includes(p)) score -= 1
-    })
-
-    return {
-      ticket,
-      score
-    }
+    return { ticket, score }
 
   })
 
-  return resultados
+  let filtrados = resultados
     .filter(r => r.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 5)
     .map(r => r.ticket)
+
+  // fallback: evita IA sem contexto
+  if (filtrados.length === 0) {
+    filtrados = tickets.slice(0, 3)
+  }
+
+  return filtrados
+}
+
+
+// ================================
+// GERAR CONTEXTO
+// ================================
+
+function gerarContextoTickets(ticketsRelevantes) {
+  return ticketsRelevantes
+    .map(t => `
+[CASO REAL DE SUPORTE]
+
+Problema: ${t.detalhamento}
+Causa: ${t.descricao}
+Solução aplicada: ${t.resolucao}
+`)
+    .join("\n")
+}
+
+
+// ================================
+// GERAR PROMPT
+// ================================
+
+function montarMensagens(pergunta, contextoTickets) {
+  return [
+    {
+      role: "system",
+      content: PromptPadrao
+    },
+    {
+      role: "system",
+      content: `
+Você é a LIA, assistente técnica.
+
+REGRAS IMPORTANTES:
+
+1. SEMPRE tente responder usando os tickets abaixo
+2. Se encontrar algo parecido, USE a solução do ticket
+3. NÃO ignore os tickets
+4. Só use conhecimento geral se NÃO houver informação relevante
+
+TICKETS DISPONÍVEIS:
+
+${contextoTickets}
+`
+    },
+    {
+      role: "user",
+      content: pergunta
+    }
+  ]
+}
+
+
+// ================================
+// PROCESSAR RESPOSTA IA
+// ================================
+
+async function responderIA(pergunta, userTag) {
+
+  const ticketsRelevantes = buscarTickets(pergunta, tickets)
+
+  console.log("Pergunta:", pergunta)
+  console.log("Tickets usados:", ticketsRelevantes.map(t => t.descricao))
+
+  const contextoTickets = gerarContextoTickets(ticketsRelevantes)
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: montarMensagens(pergunta, contextoTickets)
+  });
+
+  const resposta = response.choices[0].message.content.trim()
+
+  // Fora do escopo
+  if (resposta === "FORA_DO_ESCOPO") {
+    await logIA("Fora do Escopo", pergunta, userTag)
+    return "Essa solicitação não está relacionada a suporte técnico."
+  }
+
+  // Não sabe responder
+  if (resposta === "NAO_SEI_RESPONDER") {
+    await logIA("Nao Sabe", pergunta, userTag)
+    return "Ainda não tenho informação suficiente para responder isso."
+  }
+
+  await logIA("Resposta Normal", pergunta, userTag)
+
+  return resposta
 }
 
 
@@ -102,7 +187,7 @@ client.on('clientReady', () => {
 
 
 // ================================
-// MENSAGENS
+// EVENTO DE MENSAGEM
 // ================================
 
 client.on('messageCreate', async (message) => {
@@ -116,19 +201,12 @@ client.on('messageCreate', async (message) => {
   if (message.content === "!suporte") {
 
     try {
-
       await message.author.send(
-        "Olá! Sou a Lia, assistente técnica.\nComo posso te ajudar?"
+        "Olá! Sou a Lia, SuporteN2. Como posso ajudar?"
       )
-
     } catch (error) {
-
-      await logError(error, 'Erro ao abrir DM');
-
-      message.reply(
-        "Não consegui te enviar mensagem privada. Ative seu DM 😢"
-      )
-
+      await logError(error, 'Erro ao abrir DM')
+      message.reply("Não consegui te enviar mensagem privada 😢")
     }
 
     return
@@ -136,100 +214,14 @@ client.on('messageCreate', async (message) => {
 
 
 // ================================
-// MENSAGEM PRIVADA (CORRIGIDO)
+// MENSAGEM PRIVADA
 // ================================
 
   if (!message.guild) {
 
     try {
 
-      const ticketsRelevantes = buscarTickets(
-        message.content,
-        tickets
-      )
-
-      const contextoTickets = ticketsRelevantes
-        .map(t => `
-Ticket Resolvido:
-
-Título: ${t.descricao}
-Problema: ${t.detalhamento}
-Solução: ${t.resolucao}
-`)
-        .join("\n")
-
-      console.log("Tickets encontrados:", ticketsRelevantes.length)
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: PromptPadrao
-          },
-          {
-            role: "system",
-            content: `
-Base de conhecimento interna:
-
-${contextoTickets}
-
-Use esses tickets como prioridade.
-Se não encontrar resposta, utilize conhecimento geral.
-`
-          },
-          {
-            role: "user",
-            content: message.content
-          }
-        ]
-      });
-
-      const resposta = response.choices[0].message.content.trim()
-
-
-// ================================
-// FORA DO ESCOPO
-// ================================
-
-      if (resposta === "FORA_DO_ESCOPO") {
-
-        await logIA(
-          "Fora do Escopo",
-          message.content,
-          message.author.tag
-        )
-
-        return message.reply(
-          "Essa solicitação não está relacionada a suporte técnico. Posso ajudar com sistemas, impressoras, rede, integrações e erros técnicos."
-        )
-      }
-
-
-// ================================
-// NAO SABE RESPONDER
-// ================================
-
-      if (resposta === "NAO_SEI_RESPONDER") {
-
-        await logIA(
-          "Nao Sabe",
-          message.content,
-          message.author.tag
-        )
-
-        return message.reply(
-          "Ainda não tenho informação suficiente para responder isso. Vou registrar para melhoria."
-        )
-      }
-
-
-// ================================
-// RESPOSTA NORMAL
-// ================================
-
-      await logIA(
-        "Resposta Normal",
+      const resposta = await responderIA(
         message.content,
         message.author.tag
       )
@@ -239,12 +231,9 @@ Se não encontrar resposta, utilize conhecimento geral.
     } catch (error) {
 
       console.error(error)
+      await logError(error, 'Erro responder DM')
 
-      await logError(error, 'Erro responder DM');
-
-      message.reply(
-        "Ocorreu um erro ao falar com a IA 😢"
-      )
+      message.reply("Erro ao falar com a IA 😢")
     }
 
     return
@@ -252,62 +241,24 @@ Se não encontrar resposta, utilize conhecimento geral.
 
 
 // ================================
-// QUANDO MENCIONAR NO SERVIDOR
+// MENÇÃO NO SERVIDOR
 // ================================
 
   if (message.mentions.has(client.user)) {
 
     try {
 
-      const ticketsRelevantes = buscarTickets(
+      const resposta = await responderIA(
         message.content,
-        tickets
+        message.author.tag
       )
-
-      const contextoTickets = ticketsRelevantes
-        .map(t => `
-Ticket Resolvido:
-
-Título: ${t.descricao}
-Problema: ${t.detalhamento}
-Solução: ${t.resolucao}
-`)
-        .join("\n")
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: PromptPadrao
-          },
-          {
-            role: "system",
-            content: `
-Base de conhecimento interna:
-
-${contextoTickets}
-
-Use esses tickets como prioridade.
-Se não encontrar resposta, utilize conhecimento geral.
-`
-          },
-          {
-            role: "user",
-            content: message.content
-          }
-        ]
-      });
-
-      const resposta = response.choices[0].message.content
 
       await message.reply(resposta)
 
     } catch (error) {
 
       console.error(error)
-
-      await logError(error, 'Erro responder servidor');
+      await logError(error, 'Erro responder servidor')
 
       message.reply("Erro ao responder 😢")
     }
@@ -315,5 +266,10 @@ Se não encontrar resposta, utilize conhecimento geral.
   }
 
 })
+
+
+// ================================
+// LOGIN
+// ================================
 
 client.login(process.env.DISCORD_TOKEN)
