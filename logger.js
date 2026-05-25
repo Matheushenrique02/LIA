@@ -4,24 +4,11 @@ const fs = require('fs');
 
 const filePath = path.join(__dirname, 'logs.xlsx');
 
-let workbook = new ExcelJS.Workbook();
-let initialized = false;
-
-// Inicializar planilha
-async function initWorkbook() {
-
-  if (initialized) return;
-
-  if (fs.existsSync(filePath)) {
-    await workbook.xlsx.readFile(filePath);
-  }
-
-  // Aba Logs
+// Função interna para garantir que as abas existam
+function setupSheets(workbook) {
   let logsSheet = workbook.getWorksheet('Logs');
-
   if (!logsSheet) {
     logsSheet = workbook.addWorksheet('Logs');
-
     logsSheet.columns = [
       { header: 'Data', key: 'date', width: 25 },
       { header: 'Erro', key: 'error', width: 70 },
@@ -29,12 +16,9 @@ async function initWorkbook() {
     ];
   }
 
-  // Aba IA
   let iaSheet = workbook.getWorksheet('Interacoes_IA');
-
   if (!iaSheet) {
     iaSheet = workbook.addWorksheet('Interacoes_IA');
-
     iaSheet.columns = [
       { header: 'Data', key: 'date', width: 25 },
       { header: 'Tipo', key: 'type', width: 20 },
@@ -42,62 +26,54 @@ async function initWorkbook() {
       { header: 'Usuário', key: 'user', width: 30 },
     ];
   }
-
-  initialized = true;
+  return { logsSheet, iaSheet };
 }
 
-// Log de erro técnico
-
-async function logError(error, context = '') {
-
+async function saveLog(type, data) {
+  const workbook = new ExcelJS.Workbook();
+  
   try {
+    // 1. Tenta ler o arquivo existente, se não existir, cria um novo
+    if (fs.existsSync(filePath)) {
+      await workbook.xlsx.readFile(filePath);
+    }
 
-    await initWorkbook();
+    // 2. Garante que as abas e colunas existam
+    const { logsSheet, iaSheet } = setupSheets(workbook);
 
-    const sheet = workbook.getWorksheet('Logs');
+    // 3. Adiciona a linha na aba correta
+    if (type === 'error') {
+      logsSheet.addRow({
+        date: new Date().toLocaleString('pt-BR'), // Data legível
+        error: data.error,
+        context: data.context
+      });
+    } else {
+      iaSheet.addRow({
+        date: new Date().toLocaleString('pt-BR'),
+        type: data.tipo,
+        question: data.pergunta,
+        user: data.usuario
+      });
+    }
 
-    sheet.addRow({
-      date: new Date().toISOString(),
-      error: error?.stack || error?.message || String(error),
-      context
-    });
-
+    // 4. Salva o arquivo
     await workbook.xlsx.writeFile(filePath);
-
   } catch (err) {
-    console.error('Erro ao salvar log:', err);
+    console.error('Erro crítico ao manipular Excel:', err);
   }
-
 }
 
-// Log IA
-
-async function logIA(tipo, pergunta, usuario) {
-
-  try {
-
-    await initWorkbook();
-
-    const sheet = workbook.getWorksheet('Interacoes_IA');
-
-    sheet.addRow({
-      date: new Date().toISOString(),
-      type: tipo,
-      question: pergunta,
-      user: usuario
-    });
-
-    await workbook.xlsx.writeFile(filePath);
-
-  } catch (err) {
-    console.error('Erro ao salvar log IA:', err);
-  }
-
-}
-
-// ----------------------------------- //
-
-module.exports = {
-  logError,
-  logIA
+// Exportações ajustadas para usar a lógica centralizada
+const logError = async (error, context = '') => {
+  await saveLog('error', {
+    error: error?.stack || error?.message || String(error),
+    context
+  });
 };
+
+const logIA = async (tipo, pergunta, usuario) => {
+  await saveLog('ia', { tipo, pergunta, usuario });
+};
+
+module.exports = { logError, logIA };
