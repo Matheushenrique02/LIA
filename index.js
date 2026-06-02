@@ -53,49 +53,50 @@ const client = new Client({
 // ================================
 
 function buscarTickets(pergunta, tickets) {
+    const perguntaLower = pergunta.toLowerCase();
+    
+    // Lista de palavras irrelevantes para ignorar na busca
+    const stopwords = ['estou', 'com', 'um', 'erro', 'no', 'sistema', 'na', 'do', 'da', 'como', 'fazer'];
+    const palavrasChave = perguntaLower
+        .split(/\W+/)
+        .filter(p => p.length > 2 && !stopwords.includes(p));
 
-  const perguntaLower = pergunta.toLowerCase()
+    const resultados = tickets.map(ticket => {
+        const descricao = (ticket.descricao || "").toLowerCase();
+        const detalhamento = (ticket.detalhamento || "").toLowerCase();
+        const resolucao = (ticket.resolucao || "").toLowerCase();
+        const textoCompleto = `${descricao} ${detalhamento} ${resolucao}`;
 
-  const palavras = perguntaLower
-    .split(/\W+/)
-    .filter(p => p.length > 2)
+        let score = 0;
 
-  const resultados = tickets.map(ticket => {
+        // 1. Match exato de termos técnicos (ex: "NCM", "NF-E", "CERTIFICADO")
+        palavrasChave.forEach(palavra => {
+            if (textoCompleto.includes(palavra)) {
+                score += 5; // Aumenta o peso para palavras-chave encontradas
+            }
+        });
 
-    const texto = (
-      ticket.descricao +
-      " " +
-      ticket.detalhamento +
-      " " +
-      ticket.resolucao
-    ).toLowerCase()
+        // 2. Bonus se o título (descrição) contiver a palavra principal
+        if (palavrasChave.some(p => descricao.includes(p))) {
+            score += 10;
+        }
 
-    let score = 0
+        // 3. Match de frases completas gera pontuação máxima
+        if (detalhamento.includes(perguntaLower)) {
+            score += 50;
+        }
 
-    // match exato (muito forte)
-    if (texto.includes(perguntaLower)) score += 10
+        return { ticket, score };
+    });
 
-    // match por palavras
-    palavras.forEach(p => {
-      if (texto.includes(p)) score += 2
-    })
+    // Ordena por relevância e filtra apenas os que tem score > 0
+    let filtrados = resultados
+        .filter(r => r.score > 5) // Exige um mínimo de compatibilidade
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3) // Pega os 3 melhores
+        .map(r => r.ticket);
 
-    return { ticket, score }
-
-  })
-
-  let filtrados = resultados
-    .filter(r => r.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5)
-    .map(r => r.ticket)
-
-  // fallback: evita IA sem contexto
-  if (filtrados.length === 0) {
-    filtrados = tickets.slice(0, 3)
-  }
-
-  return filtrados
+    return filtrados;
 }
 
 
