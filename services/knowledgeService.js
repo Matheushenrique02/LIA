@@ -1,5 +1,16 @@
-// CORREÇÃO: Importa o JSON direto, já que você não tem o ticketSource.js
-import tickets from '../tickets_lia.json' assert { type: 'json' };
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const tickets = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, '../tickets_lia.json'),
+    'utf8'
+  )
+);
 
 export async function gatherKnowledge(query, options = {}) {
     try {
